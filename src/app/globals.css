@@ -26,15 +26,13 @@ body {
   /* font-family: var(--font-inter), sans-serif; */
 }
 
-/* .movie-card {
+.vote {
+  height: 30px;
+  width: 30px;
   display: flex;
-  flex-direction: row;
-  gap: 20px;
-  width: 450px;
-  height: 280px;
+  padding: 0 10px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #e9d100;
+  border-radius: 50%;
 }
-
-.movie-info {
-  display: flex;
-  flex-direction: column;
-} */
