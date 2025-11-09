@@ -1,6 +1,6 @@
 "use client";
-import { Pagination, Input, Select, Space, Typography, Card, Tag } from "antd";
-import { useState } from "react";
+import { Pagination, Input, Select, Space, Typography, Card, Tag, Spin, Alert } from "antd";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 
 const { Text } = Typography;
@@ -22,13 +22,64 @@ const { Search } = Input;
 const { Option } = Select;
 
 function MovieCards({ movies }: Props) {
+  /* начальное значение состояние для спиннера */
+  const [mounted, setMounted] = useState(false);
   /* Пагинация */
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 6;
+  /* ошибка */
+  const [error, setError] = useState<string | null>(null)
 
   // считаем какие фильмы показывать
   const startIndex = (currentPage - 1) * pageSize;
   const currentMovies = movies.slice(startIndex, startIndex + pageSize);
+
+  useEffect(() => {
+    // компонент полностью смонтирован на клиенте
+    const timeout = setTimeout(() => setMounted(true), 50); // задержка
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // обработка потери интернета
+  useEffect(() => {
+    function handleOffline() {
+      setError("Отсутсвует подключение к интернету")
+    }
+
+    function handleOnline() {
+      setError(null)
+    }
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("onlike", handleOnline);
+
+    // если связь с инетрентом оборвалась
+    if(!navigator.onLine) {
+      setError("Отсутсвует подключение к интернету")
+    }
+
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [])
+
+  if (!mounted) {
+    // Пока компонента нет показываем спиннер
+    return (
+      <div className="fixed inset-0 flex justify-center items-center bg-white z-50">
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if(error) {
+    return (
+      <div className="flex justify-center items-center mt-10">
+        <Alert message="Ошибка" description={error} type="error" showIcon />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center gap-6 mt-8">
