@@ -16,12 +16,13 @@ type Movie = {
 
 type Props = {
   movies: Movie[];
+  serverError?: string | null;
 };
 
 const { Search } = Input;
 const { Option } = Select;
 
-function MovieCards({ movies }: Props) {
+function MovieCards({ movies, serverError }: Props) {
   /* начальное значение состояние для спиннера */
   const [mounted, setMounted] = useState(false);
   /* Пагинация */
@@ -36,8 +37,7 @@ function MovieCards({ movies }: Props) {
 
   useEffect(() => {
     // компонент полностью смонтирован на клиенте
-    const timeout = setTimeout(() => setMounted(true), 50); // задержка
-    return () => clearTimeout(timeout);
+    setMounted(true);
   }, []);
 
   // обработка потери интернета
@@ -51,7 +51,7 @@ function MovieCards({ movies }: Props) {
     }
 
     window.addEventListener("offline", handleOffline);
-    window.addEventListener("onlike", handleOnline);
+    window.addEventListener("online", handleOnline);
 
     // если связь с инетрентом оборвалась
     if(!navigator.onLine) {
@@ -64,19 +64,24 @@ function MovieCards({ movies }: Props) {
     };
   }, [])
 
+  if (serverError || error) {
+    return (
+      <div className="flex justify-center items-center mt-10">
+        <Alert
+          message="Ошибка"
+          description={serverError || error}
+          type="error"
+          showIcon
+        />
+      </div>
+    );
+  }
+
   if (!mounted) {
     // Пока компонента нет показываем спиннер
     return (
       <div className="fixed inset-0 flex justify-center items-center bg-white z-50">
         <Spin size="large" />
-      </div>
-    );
-  }
-
-  if(error) {
-    return (
-      <div className="flex justify-center items-center mt-10">
-        <Alert message="Ошибка" description={error} type="error" showIcon />
       </div>
     );
   }
