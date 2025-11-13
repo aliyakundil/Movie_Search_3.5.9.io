@@ -1,7 +1,18 @@
 "use client";
-import { Pagination, Input, Select, Space, Typography, Card, Tag, Spin, Alert } from "antd";
-import { useState, useEffect } from "react";
+import {
+  Pagination,
+  Input,
+  Select,
+  Space,
+  Typography,
+  Card,
+  Tag,
+  Spin,
+  Alert,
+} from "antd";
+import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
+import debounce from "lodash/debounce";
 
 const { Text } = Typography;
 
@@ -17,23 +28,70 @@ type Movie = {
 type Props = {
   movies: Movie[];
   serverError?: string | null;
+  pages: number;
+  searchQuery: string;
 };
 
 const { Search } = Input;
 const { Option } = Select;
 
-function MovieCards({ movies, serverError }: Props) {
+function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
+  const [moviesList, setMovies] = useState<Movie[]>(movies);
+  const [totalPages, setTotalPages] = useState(pages);
+
   /* начальное значение состояние для спиннера */
   const [mounted, setMounted] = useState(false);
+
   /* Пагинация */
   const [currentPage, setCurrentPage] = useState(1);
+  const [query, setQuery] = useState(searchQuery);
+  const [loading, setLoading] = useState(false);
   const pageSize = 6;
-  /* ошибка */
-  const [error, setError] = useState<string | null>(null)
 
-  // считаем какие фильмы показывать
-  const startIndex = (currentPage - 1) * pageSize;
-  const currentMovies = movies.slice(startIndex, startIndex + pageSize);
+  /* ошибка */
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchMovies = async (page: number, searchQuery: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/movies?query=${searchQuery}&page=${page}`);
+
+      console.log("Response object:", res); // весь объект Response
+      console.log("Status:", res.status); // HTTP статус
+      console.log("OK:", res.ok); // true если статус 200–299
+      console.log("Headers:", res.headers); // заголовки ответа
+
+      const data = await res.json();
+      if (data.errorMessage) setError(data.errorMessage);
+      else {
+        setMovies(data.movies);
+        setTotalPages(data.total_pages);
+      }
+    } catch {
+      setError("Не удалось загрузить данные");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Используем debounce для поиска
+  const debouncedFetch = useCallback(
+    debounce((value: string) => {
+      setCurrentPage(1);
+      fetchMovies(1, value);
+    }, 500),
+    []
+  );
+
+  useEffect(() => {
+    if (!query) return setError("Отсутсвует такой фильм");
+    debouncedFetch(query);
+  }, [query]);
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    fetchMovies(page, query);
+  };
 
   useEffect(() => {
     // компонент полностью смонтирован на клиенте
@@ -43,26 +101,26 @@ function MovieCards({ movies, serverError }: Props) {
   // обработка потери интернета
   useEffect(() => {
     function handleOffline() {
-      setError("Отсутсвует подключение к интернету")
+      setError("Отсутсвует подключение к интернету");
     }
 
     function handleOnline() {
-      setError(null)
+      setError(null);
     }
 
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
 
     // если связь с инетрентом оборвалась
-    if(!navigator.onLine) {
-      setError("Отсутсвует подключение к интернету")
+    if (!navigator.onLine) {
+      setError("Отсутсвует подключение к интернету");
     }
 
     return () => {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
     };
-  }, [])
+  }, []);
 
   if (serverError || error) {
     return (
@@ -101,51 +159,62 @@ function MovieCards({ movies, serverError }: Props) {
       </Space>
 
       {/* Поиск */}
-      <Input.Search placeholder="Type to search" size="large" />
+      <Input.Search
+        placeholder="Type to search"
+        size="large"
+        // value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
 
       {/* Сетка карточек */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
-        {currentMovies.map((movie) => (
-          <Card hoverable key={movie.id}>
-            <div className="movie-card flex gap-6 rounded-xl w-[451px]">
-              <div className="flex-shrink-0">
-                {movie.poster_path ? (
-                  <img
-                    src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
-                    alt={movie.title}
-                    className="w-[183px] h-[281px] object-cover"
-                  />
-                ) : (
-                  <div className="w-[183px] h-[281px] flex items-center justify-center bg-gray-200 text-gray-500">
-                    No Image
+      {moviesList.length === 0 ? (
+        <div className="w-full text-center mt-4 text-lg text-gray-500">
+          К сожалению, такого фильма нет!
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
+          {moviesList.map((movie) => (
+            <Card hoverable key={movie.id}>
+              <div className="movie-card flex gap-6 rounded-xl w-[451px]">
+                <div className="flex-shrink-0">
+                  {movie.poster_path ? (
+                    <img
+                      src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
+                      alt={movie.title}
+                      className="w-[183px] h-[281px] object-cover"
+                    />
+                  ) : (
+                    <div className="w-[183px] h-[281px] flex items-center justify-center bg-gray-200 text-gray-500">
+                      No Image
+                    </div>
+                  )}
+                </div>
+                <div className="movie-info flex flex-col justify-start p-3">
+                  <div className="movie-title flex items-center justify-between mb-2">
+                    <span className="text-xl font-semibold">{movie.title}</span>
+                    <Tag className="vote">{movie.vote_average}</Tag>
                   </div>
-                )}
-              </div>
-              <div className="movie-info flex flex-col justify-start p-3">
-                <div className="movie-title flex items-center justify-between mb-2">
-                  <span className="text-xl font-semibold">{movie.title}</span>
-                  <Tag className="vote">{movie.vote_average}</Tag>
-                </div>
-                <div className="movie-release_date text-gray-600 mb-2">
-                  {movie.release_date
-                    ? format(new Date(movie.release_date), "MMMM d, yyyy")
-                    : "No date"}
-                </div>
-                <div className="movie-overview text-sm font-light">
-                  {movie.overview}
+                  <div className="movie-release_date text-gray-600 mb-2">
+                    {movie.release_date
+                      ? format(new Date(movie.release_date), "MMMM d, yyyy")
+                      : "No date"}
+                  </div>
+                  <div className="movie-overview text-sm font-light">
+                    {movie.overview}
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <div className="mt-8 mb-8">
         <Pagination
           current={currentPage}
-          total={movies.length}
+          total={totalPages * pageSize}
           pageSize={pageSize}
-          onChange={setCurrentPage}
+          onChange={handlePageChange}
           showSizeChanger={false}
         />
       </div>
