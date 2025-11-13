@@ -85,7 +85,10 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
   );
 
   useEffect(() => {
-    if (!query) return setError("Отсутсвует такой фильм");
+    setLoading(true);
+    setError(null);
+
+    if (!query) return;
     debouncedFetch(query);
   }, [query]);
   const handlePageChange = (page: number) => {
