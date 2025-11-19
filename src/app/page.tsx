@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import MovieCards from "./components/MovieCards";
+import { FilterProvider } from "./context/FilterContext";
 
 type Movie = {
   id: number;
@@ -51,17 +52,23 @@ async function getMovies(): Promise<FetchResult> {
   return { movies, pages, query, errorMessage };
 }
 
-export default async function Home() {
+export default async function Home({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { movies, errorMessage, pages, query } = await getMovies();
   return (
     <div className="flex justify-center">
       <div className="max-w-5xl w-full flex flex-col items-center">
-        <MovieCards
-          movies={movies}
-          serverError={errorMessage}
-          pages={pages}
-          searchQuery={query}
-        />
+        <FilterProvider>
+          <MovieCards
+            movies={movies}
+            serverError={errorMessage}
+            pages={pages}
+            searchQuery={query}
+          />
+        </FilterProvider>
       </div>
     </div>
   );
