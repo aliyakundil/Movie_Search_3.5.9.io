@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import debounce from "lodash/debounce";
 import { useFilter } from "../context/FilterContext";
+import { truncateText } from "@/utils/truncateText";
 
 const { Text } = Typography;
 
@@ -25,19 +26,27 @@ type Movie = {
   poster_path: string | null;
   release_date: string;
   vote_average: number;
+  genre_ids: [];
 };
+
+type Genre = {
+  id: number;
+  name: string;
+}
 
 type Props = {
   movies: Movie[];
   serverError?: string | null;
   pages: number;
   searchQuery: string;
+  genres: Genre[];
+  errorGenre: string | null;
 };
 
 const { Search } = Input;
 const { Option } = Select;
 
-function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
+function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenre }: Props) {
   const [moviesList, setMovies] = useState<Movie[]>(movies);
   const [totalPages, setTotalPages] = useState(pages);
   //  Гостевой режим
@@ -59,14 +68,9 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
 
   // Рейтинг
   const [rating, setRating] = useState<Record<number, number>>({});
-  const [color, setColor] = useState<Record<number, string>>({});
 
   // Состояние для активного фильтра
   const { activeFilter, setActiveFilter } = useFilter();
-
-  // Пагинация для вкладки Rated
-  const ratedMovies = moviesList.filter((movie) => rating[movie.id] > 0);
-  const totalPagesRated = Math.ceil(ratedMovies.length / pageSize);
 
   // Список фильмов с рейтингом
   const [ratedMoviesState, setRatedMoviesState] = useState<Movie[]>([]);
@@ -106,11 +110,11 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
   );
 
   useEffect(() => {
-    setLoading(true);
     setError(null);
+    setLoading(true);
 
     if (!query) return;
-    debouncedFetch(query);
+    debouncedFetch(query || "");
   }, [query]);
 
   const handlePageChangeSearch = (page: number) => {
@@ -123,10 +127,17 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
     fetchMovies(page, query);
   };
 
-  const paginatedRatedMovies = ratedMovies.slice(
-    (currentPageRated - 1) * pageSize,
-    currentPageRated * pageSize
+  // Пагинация для вкладки Rated
+  const totalPagesRated = Math.ceil(ratedMoviesState.length / pageSizeRated);
+  const paginatedRatedMovies = ratedMoviesState.slice(
+    (currentPageRated - 1) * pageSizeRated,
+    currentPageRated * pageSizeRated
   );
+
+  // Фильтр по рейтингу
+  const moviesToRender = activeFilter === "search"
+    ? moviesList
+    : paginatedRatedMovies;
 
   useEffect(() => {
     // компонент полностью смонтирован на клиенте
@@ -180,17 +191,72 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
     initGuestSession();
   }, []);
 
-  // Рейтинг
-  const handlRatingChange = (movieId: number, value: number) => {
-    setRating((prev) => ({ ...prev, [movieId]: value }));
-    let color: string = "#66E900";
-    if (value <= 3) color = "#E90000";
-    else if (value <= 5) color = "#E97E00";
-    else if (value <= 7) color = "#E9D100";
-    else color = "#66E900";
+  // Функция для отправки рейтинга на TMDb
+  const submitRating = async (movieId: number, value: number) => {
+    if(!guestSession) {
+      console.error("Гостевая сессия не инициализирована")
+      return;
+    }
 
-    setColor((prev) => ({ ...prev, [movieId]: color }));
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/rating?api_key=${process.env.TMDB_API_KEY}&guest_session_id=${guestSession}`,
+        {
+          method: "POST",
+          headers: {
+          "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ value })
+        }
+      )
+      const date = await res.json();
+      console.log("Рейтинг: ", date)
+    } catch(err) {
+      console.error("Ошибка при отправке рейтинга", err);
+    }
+  }
+
+  // Читать локально гостевой рейтинг
+  useEffect(() => {
+    const savedRating = localStorage.getItem("movieRatings");
+    if (savedRating) {
+      setRating(JSON.parse(savedRating));
+    }
+  }, []);
+
+  // Сохраняем каждый раз при изменении рейтинга
+  useEffect(() => {
+    if (Object.keys(rating).length > 0) {
+      localStorage.setItem("movieRatings", JSON.stringify(rating));
+    }
+  }, [rating]);
+  
+  // Рейтинг
+  const handleRatingChange = (movieId: number, value: number) => {
+    setRating((prev) => ({ ...prev, [movieId]: value }));
+
+    const movie = moviesList.find(m => m.id === movieId);
+      if (movie && value > 0) {
+        setRatedMoviesState(prev => {
+          if (!prev.some(m => m.id === movieId)) return [...prev, movie];
+          return prev;
+        });
+      } else {
+        // если рейтинг снят
+        setRatedMoviesState(prev => prev.filter(m => m.id !== movieId));
+      }
+
+    submitRating(movieId, value);
   };
+
+
+  const getBorderColor = (rating: number) => {
+    let color: string = "#66E900";
+    if (rating < 3) color = "#E90000";
+    else if (rating < 5) color = "#E97E00";
+    else if (rating < 7) color = "#E9D100";
+    else if (rating >= 7)  color = "#66E900";
+    return color;
+  }
 
   if (serverError || error) {
     return (
@@ -205,7 +271,7 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
     );
   }
 
-  if (!mounted) {
+  if (!mounted || loading) {
     // Пока компонента нет показываем спиннер
     return (
       <div className="fixed inset-0 flex justify-center items-center bg-white z-50">
@@ -248,29 +314,28 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
       </Space>
 
       {/* Поиск */}
-      <Input.Search
+      {activeFilter === "search" ? <Input.Search
         placeholder="Type to search"
         size="large"
         // value={query}
         onChange={(e) => setQuery(e.target.value)}
-      />
+      /> : null}
 
       {/* Сетка карточек */}
-      {moviesList.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center items-center w-full h-[300px]">
+          <Spin size="large" />
+        </div>
+      ) : moviesList.length === 0 ? (
         <div className="w-full text-center mt-4 text-lg text-gray-500">
           К сожалению, такого фильма нет!
         </div>
-      ) : (
+      ) :  (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
-          {moviesList
-            .filter((movie) => {
-              if (activeFilter === "search") return true;
-              if (activeFilter === "rated") return rating[movie.id] > 0;
-              return true;
-            })
+          {moviesToRender
             .map((movie) => (
               <Card hoverable key={movie.id}>
-                <div className="movie-card flex gap-6 rounded-xl w-[451px]">
+                <div className="movie-card flex gap-3 rounded-xl w-[451px]">
                   <div className="flex-shrink-0">
                     {movie.poster_path ? (
                       <img
@@ -289,22 +354,30 @@ function MovieCards({ movies, serverError, pages, searchQuery }: Props) {
                       <span className="text-xl font-semibold">
                         {movie.title}
                       </span>
-                      <Tag className="vote">{movie.vote_average}</Tag>
+                      <Tag className="vote" style={{ border: `2px solid ${getBorderColor(movie.vote_average)}` }}>{movie.vote_average.toFixed(1)}</Tag>
                     </div>
                     <div className="movie-release_date text-gray-600 mb-2">
                       {movie.release_date
                         ? format(new Date(movie.release_date), "MMMM d, yyyy")
                         : "No date"}
                     </div>
+                    <div className="movie-genre">
+                      {movie.genre_ids.map((id) => {
+                        const genre = genres.find(g => g.id === id)
+                        return (
+                          <span className="w-[37px] h-[15px] text-[#000000A6] font-normal text-[12px] leading-[100%] tracking-[0] border border-[#000000A6] font-inter px-1 mr-1" key={id}>{genre?.name} </span>
+                        )
+                      })}
+                      </div>
                     <div className="movie-overview text-sm font-light">
-                      {movie.overview}
+                      {truncateText(movie.overview, 130)}
                     </div>
                     <Rate
                       className="custom-rate"
                       count={10}
-                      onChange={(value) => handlRatingChange(movie.id, value)}
-                      value={rating[movie.id] || 0}
-                      style={{ color: color[movie.id] }}
+                      onChange={(value) => handleRatingChange(movie.id, value)}
+                      value={rating[movie.id] ?? 0}
+                      style={{ fontSize: 18, whiteSpace: "nowrap", display: "flex" }}
                     />
                   </div>
                 </div>

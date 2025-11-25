@@ -9,7 +9,13 @@ type Movie = {
   poster_path: string | null;
   release_date: string;
   vote_average: number;
+  genre_ids: [];
 };
+
+type Genre = {
+  id: number;
+  name: string;
+}
 
 type MovieResponse = {
   results: Movie[];
@@ -22,9 +28,16 @@ type FetchResult = {
   query: string;
 };
 
+type FetchResultGenres = {
+  errorGenre: string | null;
+  genres: Genre[],
+};
+
+
+const apiKey = process.env.TMDB_API_KEY; // ключ из .env.local
+
 // Серверная функция для получения фильмов
 async function getMovies(): Promise<FetchResult> {
-  const apiKey = process.env.TMDB_API_KEY; // ключ из .env.local
   let errorMessage: string | null = null;
   let movies: Movie[] = [];
   let pages: number = 0;
@@ -52,12 +65,36 @@ async function getMovies(): Promise<FetchResult> {
   return { movies, pages, query, errorMessage };
 }
 
+async function getGenres(): Promise<FetchResultGenres>  {
+  let genres: Genre[] = [];
+  let errorGenre: string | null = null;
+
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/genre/movie/list?api_key=${apiKey}` // кеш на 1 час
+    );
+
+    if (!res.ok) {
+      errorGenre = `Ошибка: ${res.status} ${res.statusText}`;
+    } else {
+      const data = await res.json();
+      genres = data.genres ?? [];
+    }
+  } catch(err) {
+    console.error(err);
+    errorGenre = `Не удалось получить жанры`;
+  }
+
+  return {genres, errorGenre}
+} 
+
 export default async function Home({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const { movies, errorMessage, pages, query } = await getMovies();
+  const { genres, errorGenre } = await getGenres();
   return (
     <div className="flex justify-center">
       <div className="max-w-5xl w-full flex flex-col items-center">
@@ -67,6 +104,8 @@ export default async function Home({
             serverError={errorMessage}
             pages={pages}
             searchQuery={query}
+            genres={genres} 
+            errorGenre={errorGenre}
           />
         </FilterProvider>
       </div>
