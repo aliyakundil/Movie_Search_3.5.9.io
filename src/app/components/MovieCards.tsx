@@ -216,12 +216,14 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
   }
 
   // Читать локально гостевой рейтинг
-  useEffect(() => {
-    const savedRating = localStorage.getItem("movieRatings");
-    if (savedRating) {
-      setRating(JSON.parse(savedRating));
-    }
-  }, []);
+useEffect(() => {
+  const savedRating = JSON.parse(localStorage.getItem("movieRatings") || "{}");
+  setRating(savedRating);
+
+  // Заполняем ratedMoviesState фильмами из текущего moviesList с рейтингом
+  const rated = moviesList.filter(m => savedRating[m.id] > 0);
+  setRatedMoviesState(rated);
+}, [moviesList]);
 
   // Сохраняем каждый раз при изменении рейтинга
   useEffect(() => {
