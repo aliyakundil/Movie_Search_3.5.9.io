@@ -27,6 +27,7 @@ type Movie = {
   release_date: string;
   vote_average: number;
   genre_ids: [];
+  value?: number; // для локального рейтинга
 };
 
 type Genre = {
@@ -43,8 +44,8 @@ type Props = {
   errorGenre: string | null;
 };
 
-const { Search } = Input;
-const { Option } = Select;
+// const { Search } = Input;
+// const { Option } = Select;
 
 function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenre }: Props) {
   const [moviesList, setMovies] = useState<Movie[]>(movies);
@@ -74,6 +75,10 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
 
   // Список фильмов с рейтингом
   const [ratedMoviesState, setRatedMoviesState] = useState<Movie[]>([]);
+
+  // Для отслеживания загрузки рейтинга и ошибок
+  const [ratingLoading, setRatingLoading] = useState<Record<number, boolean>>({});
+  const [ratingError, setRatingError] = useState<Record<number, string>>({});
 
   const fetchMovies = async (page: number, searchQuery: string) => {
     setLoading(true);
@@ -124,7 +129,6 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
 
   const handlePageChangeRated = (page: number) => {
     setCurrentPageRated(page);
-    fetchMovies(page, query);
   };
 
   // Пагинация для вкладки Rated
@@ -191,63 +195,91 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
     initGuestSession();
   }, []);
 
-  // Функция для отправки рейтинга на TMDb
-  const submitRating = async (movieId: number, value: number) => {
-    if(!guestSession) {
-      console.error("Гостевая сессия не инициализирована")
+  // Функция для отправки API рейтинга
+  const submitRating = async (movie: Movie, value: number) => {
+    if (!guestSession) {
+      setRatingError(prev => ({ ...prev, [movie.id]: "Нет сессии пользователя" }));
       return;
     }
 
+    setRatingLoading(prev => ({ ...prev, [movie.id]: true }));
+    setRatingError(prev => ({ ...prev, [movie.id]: "" }));
+
     try {
-      const res = await fetch(`https://api.themoviedb.org/3/movie/${movieId}/rating?api_key=${process.env.TMDB_API_KEY}&guest_session_id=${guestSession}`,
-        {
-          method: "POST",
-          headers: {
-          "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ value })
-        }
-      )
-      const date = await res.json();
-      console.log("Рейтинг: ", date)
+      const res = await fetch("/api/rated-movies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...movie, value }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Ошибка при сохранении рейтинга");
+      }
     } catch(err) {
+      setRatingError(prev => ({ ...prev, [movie.id]: err.message }));
       console.error("Ошибка при отправке рейтинга", err);
+    } finally {
+      setRatingLoading(prev => ({ ...prev, [movie.id]: false }));
     }
   }
 
-  // Читать локально гостевой рейтинг
+  // получение данный с API
 useEffect(() => {
-  const savedRating = JSON.parse(localStorage.getItem("movieRatings") || "{}");
-  setRating(savedRating);
+  if (!query) return;
 
-  // Заполняем ratedMoviesState фильмами из текущего moviesList с рейтингом
-  const rated = moviesList.filter(m => savedRating[m.id] > 0);
-  setRatedMoviesState(rated);
-}, [moviesList]);
+  const fetchRatedMovies = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/rated-movies");
+      if (!res.ok) throw new Error("Ошибка загрузки Rated фильмов");
+      const data = await res.json();
+      console.log("Передаем:", data)
 
-  // Сохраняем каждый раз при изменении рейтинга
-  useEffect(() => {
-    if (Object.keys(rating).length > 0) {
-      localStorage.setItem("movieRatings", JSON.stringify(rating));
+      setRatedMoviesState(data);
+
+      const ratingMap: Record<number, number> = {};
+      data.forEach((m: any) => ratingMap[m.id] = m.value ?? 0);
+      setRating(ratingMap);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-  }, [rating]);
+  };
+
+  fetchRatedMovies();
+}, [activeFilter]);
+
+
+    useEffect(() => {
+    const ratingMap: Record<number, number> = {};
+    ratedMoviesState.forEach((m) => {
+      ratingMap[m.id] = m.value ?? 0;
+    });
+    setRating(ratingMap);
+  }, [ratedMoviesState]);
   
   // Рейтинг
-  const handleRatingChange = (movieId: number, value: number) => {
+  const handleRatingChange = (movie: Movie, movieId: number, value: number) => {
+    // 1. Обновляем локальный рейтинг
     setRating((prev) => ({ ...prev, [movieId]: value }));
 
-    const movie = moviesList.find(m => m.id === movieId);
-      if (movie && value > 0) {
-        setRatedMoviesState(prev => {
-          if (!prev.some(m => m.id === movieId)) return [...prev, movie];
-          return prev;
-        });
+    // 2. Добавляем в список Rated фильмов, если ещё нет
+    setRatedMoviesState((prev) => {
+      const exists = prev.find(m => m.id === movieId);
+      if (exists) {
+        return prev.map(m => m.id === movieId ? { ...m, value } : m);
       } else {
-        // если рейтинг снят
-        setRatedMoviesState(prev => prev.filter(m => m.id !== movieId));
+        return [...prev, { ...movie, value }];
       }
+    });
 
-    submitRating(movieId, value);
+    
+    // 3. Отправляем на API
+    submitRating(movie, value);
+    console.log("Отправка рейтинга:", movie, value)
   };
 
 
@@ -377,9 +409,10 @@ useEffect(() => {
                     <Rate
                       className="custom-rate"
                       count={10}
-                      onChange={(value) => handleRatingChange(movie.id, value)}
+                      onChange={(value) => handleRatingChange(movie, movie.id, value)}
                       value={rating[movie.id] ?? 0}
                       style={{ fontSize: 18, whiteSpace: "nowrap", display: "flex" }}
+                      disabled={ratingLoading[movie.id]} // блокируем, пока идёт запрос
                     />
                   </div>
                 </div>
