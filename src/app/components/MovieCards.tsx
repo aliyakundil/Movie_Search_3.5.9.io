@@ -12,7 +12,8 @@ import {
 } from "antd";
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import debounce from "lodash/debounce";
+import { debounce } from "lodash";
+
 import { useFilter } from "../context/FilterContext";
 import { truncateText } from "@/utils/truncateText";
 
