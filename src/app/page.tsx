@@ -1,4 +1,3 @@
-import { NextRequest, NextResponse } from "next/server";
 import MovieCards from "./components/MovieCards";
 import { FilterProvider } from "./context/FilterContext";
 
@@ -15,10 +14,6 @@ type Movie = {
 type Genre = {
   id: number;
   name: string;
-}
-
-type MovieResponse = {
-  results: Movie[];
 };
 
 type FetchResult = {
@@ -30,9 +25,8 @@ type FetchResult = {
 
 type FetchResultGenres = {
   errorGenre: string | null;
-  genres: Genre[],
+  genres: Genre[];
 };
-
 
 const apiKey = process.env.TMDB_API_KEY; // ключ из .env.local
 
@@ -65,7 +59,7 @@ async function getMovies(): Promise<FetchResult> {
   return { movies, pages, query, errorMessage };
 }
 
-async function getGenres(): Promise<FetchResultGenres>  {
+async function getGenres(): Promise<FetchResultGenres> {
   let genres: Genre[] = [];
   let errorGenre: string | null = null;
 
@@ -80,19 +74,15 @@ async function getGenres(): Promise<FetchResultGenres>  {
       const data = await res.json();
       genres = data.genres ?? [];
     }
-  } catch(err) {
+  } catch (err) {
     console.error(err);
     errorGenre = `Не удалось получить жанры`;
   }
 
-  return {genres, errorGenre}
-} 
+  return { genres, errorGenre };
+}
 
-export default async function Home({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function Home() {
   const { movies, errorMessage, pages, query } = await getMovies();
   const { genres, errorGenre } = await getGenres();
   return (
@@ -104,7 +94,7 @@ export default async function Home({
             serverError={errorMessage}
             pages={pages}
             searchQuery={query}
-            genres={genres} 
+            genres={genres}
             errorGenre={errorGenre}
           />
         </FilterProvider>

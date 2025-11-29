@@ -2,7 +2,6 @@
 import {
   Pagination,
   Input,
-  Select,
   Space,
   Typography,
   Card,
@@ -33,7 +32,7 @@ type Movie = {
 type Genre = {
   id: number;
   name: string;
-}
+};
 
 type Props = {
   movies: Movie[];
@@ -44,10 +43,17 @@ type Props = {
   errorGenre: string | null;
 };
 
-// const { Search } = Input;
-// const { Option } = Select;
+type RatedMovie = Movie & {
+  value: number;
+};
 
-function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenre }: Props) {
+function MovieCards({
+  movies,
+  serverError,
+  pages,
+  searchQuery,
+  genres,
+}: Props) {
   const [moviesList, setMovies] = useState<Movie[]>(movies);
   const [totalPages, setTotalPages] = useState(pages);
   //  Гостевой режим
@@ -77,7 +83,9 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
   const [ratedMoviesState, setRatedMoviesState] = useState<Movie[]>([]);
 
   // Для отслеживания загрузки рейтинга и ошибок
-  const [ratingLoading, setRatingLoading] = useState<Record<number, boolean>>({});
+  const [ratingLoading, setRatingLoading] = useState<Record<number, boolean>>(
+    {}
+  );
   const [ratingError, setRatingError] = useState<Record<number, string>>({});
 
   const fetchMovies = async (page: number, searchQuery: string) => {
@@ -139,9 +147,8 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
   );
 
   // Фильтр по рейтингу
-  const moviesToRender = activeFilter === "search"
-    ? moviesList
-    : paginatedRatedMovies;
+  const moviesToRender =
+    activeFilter === "search" ? moviesList : paginatedRatedMovies;
 
   useEffect(() => {
     // компонент полностью смонтирован на клиенте
@@ -198,12 +205,15 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
   // Функция для отправки API рейтинга
   const submitRating = async (movie: Movie, value: number) => {
     if (!guestSession) {
-      setRatingError(prev => ({ ...prev, [movie.id]: "Нет сессии пользователя" }));
+      setRatingError((prev) => ({
+        ...prev,
+        [movie.id]: "Нет сессии пользователя",
+      }));
       return;
     }
 
-    setRatingLoading(prev => ({ ...prev, [movie.id]: true }));
-    setRatingError(prev => ({ ...prev, [movie.id]: "" }));
+    setRatingLoading((prev) => ({ ...prev, [movie.id]: true }));
+    setRatingError((prev) => ({ ...prev, [movie.id]: "" }));
 
     try {
       const res = await fetch("/api/rated-movies", {
@@ -216,51 +226,53 @@ function MovieCards({ movies, serverError, pages, searchQuery, genres, errorGenr
         const errorData = await res.json();
         throw new Error(errorData.message || "Ошибка при сохранении рейтинга");
       }
-    } catch(err) {
-      setRatingError(prev => ({ ...prev, [movie.id]: err.message }));
-      console.error("Ошибка при отправке рейтинга", err);
-    } finally {
-      setRatingLoading(prev => ({ ...prev, [movie.id]: false }));
-    }
-  }
-
-  // получение данный с API
-useEffect(() => {
-  if (!query) return;
-
-  const fetchRatedMovies = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/rated-movies");
-      if (!res.ok) throw new Error("Ошибка загрузки Rated фильмов");
-      const data = await res.json();
-      console.log("Передаем:", data)
-
-      setRatedMoviesState(data);
-
-      const ratingMap: Record<number, number> = {};
-      data.forEach((m: any) => ratingMap[m.id] = m.value ?? 0);
-      setRating(ratingMap);
     } catch (err) {
-      console.error(err);
+      if (err instanceof Error) {
+        console.error("Ошибка при отправке рейтинга", err.message);
+      } else {
+        console.error("Неизвестная ошибка", err);
+      }
     } finally {
-      setLoading(false);
+      setRatingLoading((prev) => ({ ...prev, [movie.id]: false }));
     }
   };
 
-  fetchRatedMovies();
-}, [activeFilter]);
+  // получение данный с API
+  useEffect(() => {
+    if (!query) return;
 
+    const fetchRatedMovies = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/rated-movies");
+        if (!res.ok) throw new Error("Ошибка загрузки Rated фильмов");
+        const data = await res.json();
+        console.log("Передаем:", data);
 
-    useEffect(() => {
+        setRatedMoviesState(data);
+
+        const ratingMap: Record<number, number> = {};
+        data.forEach((m: RatedMovie) => (ratingMap[m.id] = m.value ?? 0));
+        setRating(ratingMap);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRatedMovies();
+  }, [activeFilter]);
+
+  useEffect(() => {
     const ratingMap: Record<number, number> = {};
     ratedMoviesState.forEach((m) => {
       ratingMap[m.id] = m.value ?? 0;
     });
     setRating(ratingMap);
   }, [ratedMoviesState]);
-  
+
   // Рейтинг
   const handleRatingChange = (movie: Movie, movieId: number, value: number) => {
     // 1. Обновляем локальный рейтинг
@@ -268,29 +280,27 @@ useEffect(() => {
 
     // 2. Добавляем в список Rated фильмов, если ещё нет
     setRatedMoviesState((prev) => {
-      const exists = prev.find(m => m.id === movieId);
+      const exists = prev.find((m) => m.id === movieId);
       if (exists) {
-        return prev.map(m => m.id === movieId ? { ...m, value } : m);
+        return prev.map((m) => (m.id === movieId ? { ...m, value } : m));
       } else {
         return [...prev, { ...movie, value }];
       }
     });
 
-    
     // 3. Отправляем на API
     submitRating(movie, value);
-    console.log("Отправка рейтинга:", movie, value)
+    console.log("Отправка рейтинга:", movie, value);
   };
-
 
   const getBorderColor = (rating: number) => {
     let color: string = "#66E900";
     if (rating < 3) color = "#E90000";
     else if (rating < 5) color = "#E97E00";
     else if (rating < 7) color = "#E9D100";
-    else if (rating >= 7)  color = "#66E900";
+    else if (rating >= 7) color = "#66E900";
     return color;
-  }
+  };
 
   if (serverError || error) {
     return (
@@ -348,12 +358,14 @@ useEffect(() => {
       </Space>
 
       {/* Поиск */}
-      {activeFilter === "search" ? <Input.Search
-        placeholder="Type to search"
-        size="large"
-        // value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      /> : null}
+      {activeFilter === "search" ? (
+        <Input.Search
+          placeholder="Type to search"
+          size="large"
+          // value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      ) : null}
 
       {/* Сетка карточек */}
       {loading ? (
@@ -364,60 +376,75 @@ useEffect(() => {
         <div className="w-full text-center mt-4 text-lg text-gray-500">
           К сожалению, такого фильма нет!
         </div>
-      ) :  (
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 justify-items-center">
-          {moviesToRender
-            .map((movie) => (
-              <Card hoverable key={movie.id}>
-                <div className="movie-card flex gap-3 rounded-xl w-[451px]">
-                  <div className="flex-shrink-0">
-                    {movie.poster_path ? (
-                      <img
-                        src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
-                        alt={movie.title}
-                        className="w-[183px] h-[281px] object-cover"
-                      />
-                    ) : (
-                      <div className="w-[183px] h-[281px] flex items-center justify-center bg-gray-200 text-gray-500">
-                        No Image
-                      </div>
-                    )}
-                  </div>
-                  <div className="movie-info flex flex-col justify-start p-3">
-                    <div className="movie-title flex items-center justify-between mb-2">
-                      <span className="text-xl font-semibold">
-                        {movie.title}
-                      </span>
-                      <Tag className="vote" style={{ border: `2px solid ${getBorderColor(movie.vote_average)}` }}>{movie.vote_average.toFixed(1)}</Tag>
-                    </div>
-                    <div className="movie-release_date text-gray-600 mb-2">
-                      {movie.release_date
-                        ? format(new Date(movie.release_date), "MMMM d, yyyy")
-                        : "No date"}
-                    </div>
-                    <div className="movie-genre">
-                      {movie.genre_ids.map((id) => {
-                        const genre = genres.find(g => g.id === id)
-                        return (
-                          <span className="w-[37px] h-[15px] text-[#000000A6] font-normal text-[12px] leading-[100%] tracking-[0] border border-[#000000A6] font-inter px-1 mr-1" key={id}>{genre?.name} </span>
-                        )
-                      })}
-                      </div>
-                    <div className="movie-overview text-sm font-light">
-                      {truncateText(movie.overview, 130)}
-                    </div>
-                    <Rate
-                      className="custom-rate"
-                      count={10}
-                      onChange={(value) => handleRatingChange(movie, movie.id, value)}
-                      value={rating[movie.id] ?? 0}
-                      style={{ fontSize: 18, whiteSpace: "nowrap", display: "flex" }}
-                      disabled={ratingLoading[movie.id]} // блокируем, пока идёт запрос
+          {moviesToRender.map((movie) => (
+            <Card hoverable key={movie.id}>
+              <div className="movie-card flex gap-3 rounded-xl w-[451px]">
+                <div className="flex-shrink-0">
+                  {movie.poster_path ? (
+                    <img
+                      src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`}
+                      alt={movie.title}
+                      className="w-[183px] h-[281px] object-cover"
                     />
-                  </div>
+                  ) : (
+                    <div className="w-[183px] h-[281px] flex items-center justify-center bg-gray-200 text-gray-500">
+                      No Image
+                    </div>
+                  )}
                 </div>
-              </Card>
-            ))}
+                <div className="movie-info flex flex-col justify-start p-3">
+                  <div className="movie-title flex items-center justify-between mb-2">
+                    <span className="text-xl font-semibold">{movie.title}</span>
+                    <Tag
+                      className="vote"
+                      style={{
+                        border: `2px solid ${getBorderColor(movie.vote_average)}`,
+                      }}
+                    >
+                      {movie.vote_average.toFixed(1)}
+                    </Tag>
+                  </div>
+                  <div className="movie-release_date text-gray-600 mb-2">
+                    {movie.release_date
+                      ? format(new Date(movie.release_date), "MMMM d, yyyy")
+                      : "No date"}
+                  </div>
+                  <div className="movie-genre">
+                    {movie.genre_ids.map((id) => {
+                      const genre = genres.find((g) => g.id === id);
+                      return (
+                        <span
+                          className="w-[37px] h-[15px] text-[#000000A6] font-normal text-[12px] leading-[100%] tracking-[0] border border-[#000000A6] font-inter px-1 mr-1"
+                          key={id}
+                        >
+                          {genre?.name}{" "}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div className="movie-overview text-sm font-light">
+                    {truncateText(movie.overview, 130)}
+                  </div>
+                  <Rate
+                    className="custom-rate"
+                    count={10}
+                    onChange={(value) =>
+                      handleRatingChange(movie, movie.id, value)
+                    }
+                    value={rating[movie.id] ?? 0}
+                    style={{
+                      fontSize: 18,
+                      whiteSpace: "nowrap",
+                      display: "flex",
+                    }}
+                    disabled={ratingLoading[movie.id]} // блокируем, пока идёт запрос
+                  />
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
       )}
 

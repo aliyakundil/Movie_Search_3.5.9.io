@@ -6,10 +6,6 @@ export async function GET(req: NextRequest) {
   const query = searchParams.get("query") || "return";
   const page = searchParams.get("page") || "1";
 
-  // таймер, потому что иногда сервер не успевал обрабатывать
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-
   try {
     const res = await fetch(
       `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${query}&page=${page}`
@@ -27,7 +23,7 @@ export async function GET(req: NextRequest) {
       movies: data.results ?? [],
       total_pages: data.total_pages ?? 0,
     });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       { errorMessage: "Не удалось получить данные с MovieDB" },
       { status: 500 }

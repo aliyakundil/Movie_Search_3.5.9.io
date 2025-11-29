@@ -23,7 +23,7 @@
     ]
   },
   "dependencies": {
-    "antd": "^5.11.3-alpha.0",
+    "antd": "^6.0.0",
     "date-fns": "^4.1.0",
     "lodash": "^4.17.21",
     "next": "16.0.1",
