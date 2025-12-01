@@ -12,7 +12,7 @@ import {
 } from "antd";
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import debounce from 'lodash/debounce';
+import debounce from "lodash/debounce";
 import { useFilter } from "../context/FilterContext";
 import { truncateText } from "@/utils/truncateText";
 
@@ -45,7 +45,10 @@ type Props = {
 
 type RatedMovie = Movie & {
   value: number;
+  rating: number;
 };
+
+const apiKeyClient = process.env.NEXT_PUBLIC_TMDB_API_KEY; // ключ из .env.local
 
 function MovieCards({
   movies,
@@ -66,7 +69,10 @@ function MovieCards({
   const [currentPageSearch, setCurrentPageSearch] = useState(1);
   const [currentPageRated, setCurrentPageRated] = useState(1);
   const [query, setQuery] = useState(searchQuery);
-  const [loading, setLoading] = useState(false);
+  // const [loading, setLoading] = useState(false);
+  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [loadingRated, setLoadingRated] = useState(false);
+
   const pageSize = 6;
   const pageSizeRated = 6;
 
@@ -89,7 +95,7 @@ function MovieCards({
   const [ratingError, setRatingError] = useState<Record<number, string>>({});
 
   const fetchMovies = async (page: number, searchQuery: string) => {
-    setLoading(true);
+    setLoadingSearch(true);
     setError(null);
     try {
       const res = await fetch(`/api/movies?query=${searchQuery}&page=${page}`);
@@ -108,7 +114,7 @@ function MovieCards({
     } catch {
       setError("Не удалось загрузить данные");
     } finally {
-      setLoading(false);
+      setLoadingSearch(false);
     }
   };
 
@@ -124,8 +130,7 @@ function MovieCards({
 
   useEffect(() => {
     setError(null);
-    setLoading(true);
-
+    setLoadingSearch(true);
     if (!query) return;
     debouncedFetch(query || "");
   }, [query]);
@@ -150,6 +155,8 @@ function MovieCards({
   const moviesToRender =
     activeFilter === "search" ? moviesList : paginatedRatedMovies;
 
+  const isLoading = activeFilter === "search" ? loadingSearch : loadingRated;
+
   useEffect(() => {
     // компонент полностью смонтирован на клиенте
     setMounted(true);
@@ -168,7 +175,7 @@ function MovieCards({
     window.addEventListener("offline", handleOffline);
     window.addEventListener("online", handleOnline);
 
-    // если связь с инетрентом оборвалась
+    // если связь с интернетом оборвалась
     if (!navigator.onLine) {
       setError("Отсутсвует подключение к интернету");
     }
@@ -182,20 +189,40 @@ function MovieCards({
   // Гостевой режим
   useEffect(() => {
     const initGuestSession = async () => {
+      const storedSession = localStorage.getItem("guestSession");
+      const expireTime = localStorage.getItem("guestSessionExpire");
+      const now = Date.now();
+
+      // Если есть сессия и она ещё не истекла
+      if (storedSession && expireTime && now < Number(expireTime)) {
+        setGuestSession(storedSession);
+        console.log("Используем старую сессию:", storedSession);
+        return;
+      }
+
       try {
-        const resSession = await fetch("/api/guest-session"); // эндпоинт для создания гостя
+        const resSession = await fetch(
+          `https://api.themoviedb.org/3/authentication/guest_session/new?api_key=${apiKeyClient}`
+        ); // эндпоинт для создания гостя
         const dataSession = await resSession.json();
 
         console.log("Response text:", dataSession);
 
-        if (dataSession.guest_session_id) {
+        if (dataSession.guest_session_id && dataSession.expires_at) {
           setGuestSession(dataSession.guest_session_id);
+          // Сохраняем в localStorage
+          localStorage.setItem("guestSession", dataSession.guest_session_id);
+          const expireTimestamp = new Date(dataSession.expires_at).getTime();
+          localStorage.setItem(
+            "guestSessionExpire",
+            expireTimestamp.toString()
+          );
           console.log("Сессия инициализирована", dataSession.guest_session_id);
         } else {
           console.error("Не удалось создать гостевой сеанс");
         }
       } catch (err) {
-        console.error("Ошибка при инициализации гостевогого сенса", err);
+        console.error("Ошибка при инициализации гостевого сеанса", err);
       }
     };
 
@@ -216,11 +243,14 @@ function MovieCards({
     setRatingError((prev) => ({ ...prev, [movie.id]: "" }));
 
     try {
-      const res = await fetch("/api/rated-movies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...movie, value }),
-      });
+      const res = await fetch(
+        `https://api.themoviedb.org/3/movie/${movie.id}/rating?api_key=${apiKeyClient}&guest_session_id=${guestSession}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value }),
+        }
+      );
 
       if (!res.ok) {
         const errorData = await res.json();
@@ -238,58 +268,79 @@ function MovieCards({
   };
 
   // получение данный с API
-  useEffect(() => {
-    if (!query) return;
+  const fetchRatedMovies = useCallback(async () => {
+    if (!guestSession) return;
 
-    const fetchRatedMovies = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch("/api/rated-movies");
-        if (!res.ok) throw new Error("Ошибка загрузки Rated фильмов");
-        const data = await res.json();
-        console.log("Передаем:", data);
+    setLoadingRated(true);
+    setError(null);
 
-        setRatedMoviesState(data);
+    try {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/guest_session/${guestSession}/rated/movies?api_key=${apiKeyClient}`
+      );
 
-        const ratingMap: Record<number, number> = {};
-        data.forEach((m: RatedMovie) => (ratingMap[m.id] = m.value ?? 0));
-        setRating(ratingMap);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        if (errorData?.status_code === 34) {
+          setRatedMoviesState([]);
+          setRating({});
+          return;
+        }
+        throw new Error(
+          errorData?.status_message || "Ошибка загрузки Rated фильмов"
+        );
       }
-    };
 
-    fetchRatedMovies();
-  }, [activeFilter]);
+      if (!res.ok) throw new Error("Ошибка загрузки Rated фильмов");
+
+      const data = await res.json();
+      const rated: RatedMovie[] = data.results ?? [];
+
+      setRatedMoviesState(rated.map((m) => ({ ...m, value: m.rating ?? 0 })));
+
+      const ratingMap: Record<number, number> = rated.reduce(
+        (acc: Record<number, number>, m: RatedMovie) => {
+          acc[m.id] = m.rating ?? 0;
+          return acc;
+        },
+        {} as Record<number, number>
+      );
+      setRating(ratingMap);
+    } catch (err) {
+      console.error(err);
+      setError("Не удалось загрузить Rated фильмы");
+    } finally {
+      setLoadingRated(false);
+    }
+  }, [guestSession]);
 
   useEffect(() => {
-    const ratingMap: Record<number, number> = {};
-    ratedMoviesState.forEach((m) => {
-      ratingMap[m.id] = m.value ?? 0;
-    });
-    setRating(ratingMap);
-  }, [ratedMoviesState]);
+    if (guestSession) {
+      fetchRatedMovies();
+    }
+  }, [guestSession, activeFilter, fetchRatedMovies]);
 
   // Рейтинг
-  const handleRatingChange = (movie: Movie, movieId: number, value: number) => {
+  const handleRatingChange = async (movie: Movie, value: number) => {
     // 1. Обновляем локальный рейтинг
-    setRating((prev) => ({ ...prev, [movieId]: value }));
+    setRating((prev) => ({ ...prev, [movie.id]: value }));
 
-    // 2. Добавляем в список Rated фильмов, если ещё нет
+    // 2. Добавляем в список Rated фильмов
     setRatedMoviesState((prev) => {
-      const exists = prev.find((m) => m.id === movieId);
+      const exists = prev.find((m) => m.id === movie.id);
       if (exists) {
-        return prev.map((m) => (m.id === movieId ? { ...m, value } : m));
+        return prev.map((m) => (m.id === movie.id ? { ...m, value } : m));
       } else {
         return [...prev, { ...movie, value }];
       }
     });
 
     // 3. Отправляем на API
-    submitRating(movie, value);
+    submitRating(movie, value).then(() => {
+      if (activeFilter === "rated" && guestSession) {
+        fetchRatedMovies();
+      }
+    });
     console.log("Отправка рейтинга:", movie, value);
   };
 
@@ -306,7 +357,7 @@ function MovieCards({
     return (
       <div className="flex justify-center items-center mt-10">
         <Alert
-          message="Ошибка"
+          title="Ошибка"
           description={serverError || error}
           type="error"
           showIcon
@@ -315,7 +366,7 @@ function MovieCards({
     );
   }
 
-  if (!mounted || loading) {
+  if (!mounted || isLoading) {
     // Пока компонента нет показываем спиннер
     return (
       <div className="fixed inset-0 flex justify-center items-center bg-white z-50">
@@ -368,7 +419,7 @@ function MovieCards({
       ) : null}
 
       {/* Сетка карточек */}
-      {loading ? (
+      {isLoading ? (
         <div className="flex justify-center items-center w-full h-[300px]">
           <Spin size="large" />
         </div>
@@ -430,10 +481,8 @@ function MovieCards({
                   <Rate
                     className="custom-rate"
                     count={10}
-                    onChange={(value) =>
-                      handleRatingChange(movie, movie.id, value)
-                    }
-                    value={rating[movie.id] ?? 0}
+                    onChange={(value) => handleRatingChange(movie, value)}
+                    value={rating[movie.id] ?? movie.value ?? 0}
                     style={{
                       fontSize: 18,
                       whiteSpace: "nowrap",
