@@ -1,1 +1,1 @@
-https://moviesearchio-git-main-aliyakundils-projects.vercel.app/
+https://moviesearch5io.vercel.app
