@@ -267,7 +267,7 @@ function MovieCards({
     }
   };
 
-    // Функция для удаления рейтинга
+  // Функция для удаления рейтинга
   const deleteRating = async (movie: Movie, value: number) => {
     if (!guestSession) {
       setRatingError((prev) => ({
@@ -287,7 +287,7 @@ function MovieCards({
         }
       );
 
-      console.log("Рейтинг был удален")
+      console.log("Рейтинг был удален");
 
       if (!res.ok) {
         const errorData = await res.json();
@@ -382,7 +382,7 @@ function MovieCards({
     } else {
       deleteRating(movie, value);
     }
-      
+
     console.log("Отправка рейтинга:", movie, value);
   };
 
