@@ -267,6 +267,43 @@ function MovieCards({
     }
   };
 
+    // Функция для удаления рейтинга
+  const deleteRating = async (movie: Movie, value: number) => {
+    if (!guestSession) {
+      setRatingError((prev) => ({
+        ...prev,
+        [movie.id]: "Нет сессии пользователя",
+      }));
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/movie/${movie.id}/rating?api_key=${apiKeyClient}&guest_session_id=${guestSession}`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value }),
+        }
+      );
+
+      console.log("Рейтинг был удален")
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Ошибка при удалении рейтинга");
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        console.error("Ошибка при удалении рейтинга", err.message);
+      } else {
+        console.error("Неизвестная ошибка", err);
+      }
+    } finally {
+      setRatingLoading((prev) => ({ ...prev, [movie.id]: false }));
+    }
+  };
+
   // получение данный с API
   const fetchRatedMovies = useCallback(async () => {
     if (!guestSession) return;
@@ -336,11 +373,16 @@ function MovieCards({
     });
 
     // 3. Отправляем на API
-    submitRating(movie, value).then(() => {
-      if (activeFilter === "rated" && guestSession) {
-        fetchRatedMovies();
-      }
-    });
+    if (value !== 0) {
+      submitRating(movie, value).then(() => {
+        if (activeFilter === "rated" && guestSession) {
+          fetchRatedMovies();
+        }
+      });
+    } else {
+      deleteRating(movie, value);
+    }
+      
     console.log("Отправка рейтинга:", movie, value);
   };
 
