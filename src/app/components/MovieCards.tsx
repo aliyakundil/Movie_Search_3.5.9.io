@@ -408,15 +408,6 @@ function MovieCards({
     );
   }
 
-  if (!mounted || isLoading) {
-    // Пока компонента нет показываем спиннер
-    return (
-      <div className="fixed inset-0 flex justify-center items-center bg-white z-50">
-        <Spin size="large" />
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col items-center gap-6 mt-8">
       <Space size="large">
